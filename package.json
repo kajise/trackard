@@ -1,6 +1,6 @@
 {
 	"name": "@kajise/trackard",
-	"version": "1.0.0",
+	"version": "1.0.25",
 	"description": "A Lanyard inspiration for the music player Laudiolin, made by seiKiMo Inc.",
 	"main": "build/index.js",
 	"scripts": {

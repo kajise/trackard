@@ -2,24 +2,16 @@ import express from "express";
 import filesystem from "fs";
 import path from "path";
 const server = express();
+const port = process.env.PORT || 3000;
 
-import { LaudiolinREST } from "./structures/rest/LaudiolinREST";
-const Laudiolin = new LaudiolinREST("https://your.laudiolin.rest");
+import { LaudiolinClient } from "./structures/utils/laudiolin/LaudiolinClient";
+const Laudiolin = new LaudiolinClient("https://your.laudiolin.rest");
+import APIRouter from "./structures/routers/APIRouter";
 
-server.get('/status', async (req, res) => {
-	const userId = req.query.user;
-	if (!userId) return res.status(500).json({ code: 500, message: "Target user query is missing from the URL." });
-	res.setHeader("Content-type", "image/svg+xml");
-
-	const user = await Laudiolin.getUser(userId as string);
-	const offline = filesystem.readFileSync(path.join(process.cwd(), "assets", "trackard-missing.svg"));
-	if (!user || !user.listeningTo || typeof user.listeningTo !== "object") return res.status(500).send(offline);
-
-	const thumbnail = await Laudiolin.getThumbnailBuffer(user.listeningTo);
-	const vector = filesystem.readFileSync(path.join(process.cwd(), "assets", "trackard.svg"), { encoding: "utf-8" });
-	const finalVector: string = Laudiolin.generateDetails(Buffer.from(vector.replace(/<\s*trackThumb\s*>/, thumbnail.toString("base64")), "utf-8"), user);
-
-	return res.status(200).send(Buffer.from(finalVector, "utf-8"));
+server.get('/', (req, res) => {
+	const homepage = filesystem.readFileSync(path.join(process.cwd(), "assets", "homepage.html"));
+	return res.status(200).setHeader("Content-type", "text/html").send(homepage);
 });
 
-server.listen(3000);
+server.use('/api/v1/', APIRouter(Laudiolin));
+server.listen(port);

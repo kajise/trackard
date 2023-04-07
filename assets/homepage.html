@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=yes">
+		<title>trackard 💿</title>
+
+		<!-- Stylesheets -->
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100;200;300;400;500;600;700;800;900&display=swap">
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@100;200;300;400;500;600;700;800;900&display=swap">
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tw-elements/dist/css/index.min.css" />
+		<style>
+			*::selection {
+				color: inherit;
+				background-color: rgba(200, 200, 200, 0.25);
+			}
+
+			*:focus { outline: none !important; }
+
+			body {
+				overflow-x: hidden !important;
+			}
+
+			code {
+				font-family: "JetBrains Mono", monospace !important;
+			}
+		</style>
+
+		<!-- Scripts that power the site -->
+		<script src="https://cdn.jsdelivr.net/npm/tw-elements/dist/js/index.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+		<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<script>
+			tailwind.config = {
+				theme: {
+					extend: {
+						transitionProperty: {
+							'width': 'width'
+						},
+						fontFamily: {
+						      sans: ['Space Grotesk', 'sans-serif']
+						}
+					}
+				}
+			};
+		</script>
+	</head>
+	<body class="text-white bg-neutral-900">
+		<div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+			<h1 class="text-4xl font-extrabold sm:text-5xl sm:tracking-tight lg:text-6xl">
+				trackard 💿
+			</h1>
+			<p class="mt-6 max-w-3xl text-xl">
+				Use Laudiolin with style! You can now bring your status anywhere, including your GitHub Profile.
+			</p>
+			<div class="my-4">
+				<input class="bg-neutral-900 shadow appearance-none border rounded w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline" id="discord-id" type="text" placeholder="Enter your Discord ID">
+			</div>
+			<div class="bg-neutral-800 p-4 rounded-md">
+				<code class="text-sm font-mono">
+					<code id="results-box" class="language-markdown">
+						# The input field shows the results here.
+					</code>
+				</pre>
+			</div>    
+		</div>
+		<script>
+			const resultsField = document.querySelector('#results-box');
+			const discordField = document.querySelector('#discord-id');
+			const runTrackardFunc = async (event) => {
+				if (isNaN(event.target.value) || !event.target.value) return Swal.fire({
+					toast: true,
+					position: 'bottom',
+					icon: 'error',
+					title: `You have entered an invalid Discord User ID`,
+					showConfirmButton: false,	
+					timer: 2500
+				});
+
+				try {
+					const response = await axios.get(`${window.location.origin}/api/v1/isListening?user=${event.target.value}`, { timeout: 30000 });
+					if (!response) return resultsField.textContent = '# Uh oh, looks like your ISP / DNS provider blocked the URL that this webapp needs.';
+
+					if (response.data) {
+						console.log(response.data);
+						if (response.data.status > 200) {
+							if (response.data.code === "missing_user_notify") return resultsField.innerHTML = `# You haven't provided any user ID.`;
+							return resultsField.innerHTML = `[![Laudiolin](${window.location.origin}/api/v1/render?user=${event.target.value})](https://discord.com/users/${event.target.value})<br/># It would display but wouldn't show anything because the user isn't listening to anything.`;
+						} else {
+							return resultsField.innerHTML = `[![Laudiolin](${window.location.origin}/api/v1/render?user=${event.target.value})](https://discord.com/users/${event.target.value})<br/># This user is listening to <a href="https://laudiolin.seikimo.moe/track/${response.data.message.id}" class="text-red-500">${response.data.message.title}</a>`;
+						}
+					}
+				} catch (error) {
+					return resultsField.innerHTML = `# Aww snap, how unfortunate that you came at the right time when the API went down.`;
+				}
+			};
+
+			discordField.addEventListener('input', runTrackardFunc.bind(this));
+		</script>
+	</body>
+</html>

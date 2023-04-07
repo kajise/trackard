@@ -1,84 +1,44 @@
-import axios, { Axios, AxiosError } from "axios";
+import path from "path";
+import axios from "axios";
+import filesystem from "fs";
+import { LaudiolinClient } from "./LaudiolinClient";
 
-export namespace LaudiolinREST {
-	export interface LaudiolinResponse {
-		onlineUsers: LaudiolinUser[];
-		timestamp: number; code: number;
-		message: string;
-	}
-	
-	export interface LaudiolinUser {
-		socialStatus: string;
-		username: string;
-		discriminator: string;
-		discordTag: string;
-		userId: string;
-		avatar: string;
-		progress: number;
-		listeningTo: ListeningInfo
-	}
-	
-	export interface ListeningInfo {
-		duration: number;
-		artist: string;
-		title: string;
-		icon: string;
-		uri: string;
-		id: string;
-	}
-}
+export type LaudiolinVectorTheme = "dark" | "light";
 
-export class LaudiolinREST {
-	public restClient: Axios;
+/**
+ * Creates a new LaudiolinVector instance which takes in two parameters, the first one being the theme to use for the vector to be rendered and the second one being the LaudiolinUser.
+ * @class
+ */
+export class LaudiolinVector {
+	private vectorBuffer: Buffer;
 
-	constructor(restURL: string) {
-		this.restClient = new Axios({ baseURL: restURL, responseType: "json" });
-	}
-
-	private async get(): Promise<LaudiolinREST.LaudiolinResponse> {
-		return await this.restClient.get("/social/available")
-		.then((response) => {
-			if ("data" in response && response.data) {
-				if (typeof response.data === "string") {
-					const serverResponse: LaudiolinREST.LaudiolinResponse = JSON.parse(response.data);
-					const laudiolinUsers = serverResponse.onlineUsers.map((user) => {
-						user.discordTag = `${user.username}#${user.discriminator}`;
-						return user;
-					});
-
-					return {
-						...serverResponse,
-						onlineUsers: laudiolinUsers
-					} as LaudiolinREST.LaudiolinResponse;
+	constructor(readonly theme: LaudiolinVectorTheme | string = "dark", private user: LaudiolinClient.LaudiolinUser | null) {
+		switch (theme) {
+			case "dark":
+				if (!user || !user.listeningTo || typeof user.listeningTo !== "object") {
+					this.vectorBuffer = filesystem.readFileSync(path.join(process.cwd(), "assets", "trackard-dark-missing.svg"));
 				} else {
-					const serverResponse: LaudiolinREST.LaudiolinResponse = response.data;
-					const laudiolinUsers = serverResponse.onlineUsers.map((user) => {
-						user.discordTag = `${user.username}#${user.discriminator}`;
-						return user;
-					});
-
-					return {
-						...serverResponse,
-						onlineUsers: laudiolinUsers
-					} as LaudiolinREST.LaudiolinResponse;
+					this.vectorBuffer = filesystem.readFileSync(path.join(process.cwd(), "assets", "trackard-dark-display.svg"));
 				}
-			}
-		})
-		.catch((error) => {
-			if (error instanceof AxiosError) {
-				return {
-					code: error.status, message: error.message,
-					timestamp: Date.now(), onlineUsers: []
-				} as LaudiolinREST.LaudiolinResponse;
-			} else {
-				return {
-					code: 500, message: error.message,
-					timestamp: Date.now(), onlineUsers: []
-				} as LaudiolinREST.LaudiolinResponse;
-			}
-		});
+			break;
+
+			default:
+				if (!user || !user.listeningTo || typeof user.listeningTo !== "object") {
+					this.vectorBuffer = filesystem.readFileSync(path.join(process.cwd(), "assets", "trackard-light-missing.svg"));
+				} else {
+					this.vectorBuffer = filesystem.readFileSync(path.join(process.cwd(), "assets", "trackard-light-display.svg"));
+				}
+			break;
+		}
 	}
 
+	/**
+	 * @private
+	 * @deprecated Method has been deprecated on 1.0.5, a workaround has been applied to vector-related text overflow.
+	 * @param text 
+	 * @param threshold 
+	 * @returns {string}
+	 */
 	private trimText(text: string, threshold: number) {
 		if (text.length <= threshold) return text;
 		return text.substring(0, threshold).concat("...");
@@ -90,15 +50,12 @@ export class LaudiolinREST {
 		return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 	}
 
-	public async getUser(userId: string): Promise<LaudiolinREST.LaudiolinUser> {
-		const response = await this.get();
-		const userMap = new Map<string, LaudiolinREST.LaudiolinUser>();
-		response.onlineUsers.reduce((map, obj) => map.set(obj.userId, obj), userMap);
-
-		return userMap.get(userId);
-	}
-
-	public async getThumbnailBuffer(listeningInfo: LaudiolinREST.ListeningInfo) {
+	/**
+	 * 
+	 * @param listeningInfo 
+	 * @returns {Buffer}
+	 */
+	private async getThumbnailBuffer(listeningInfo: LaudiolinClient.ListeningInfo): Promise<Buffer> {
 		const iconURL = listeningInfo.icon.replace(/=w\d+-h\d+-l\d+-rj\?from=cart/, "=w512-h512?from=cart")
 
 		return await axios.get(iconURL, { responseType: 'arraybuffer' })
@@ -110,13 +67,28 @@ export class LaudiolinREST {
 		});
 	}
 
-	public generateDetails(svgBuffer: Buffer, user: LaudiolinREST.LaudiolinUser) {
-		const vector = svgBuffer.toString("utf-8");
-		const laudiolinURI = vector.replace(/<\s*laudiolinURI\s*>/, `https://laudiolin.seikimo.moe/track/${user.listeningTo.id}`);
-		const inviteURI = laudiolinURI.replace(/<\s*listenURL\s*>/, `https://laudiolin.seikimo.moe/listen/${user.userId}`);
-		return inviteURI.replace(/\{artist\}/, user.listeningTo.artist)
-			.replace(/\{title\}/, this.trimText(user.listeningTo.title, 20)).replace(/\{userTag\}/, user.discordTag)
-			.replace(/\{duration\}/, this.formatSeconds(user.listeningTo.duration))
-			.replace(/\{current\}/, this.formatSeconds(Math.round(user.progress)));
+	/**
+	 * Renders an SVG code with all the provided data, returns placeholder if Laudiolin user isn't found or not listening to anything.
+	 * @returns {Promise<string>}
+	 */
+	public async render(): Promise<string> {
+		if (!this.user || !this.user.listeningTo || typeof this.user.listeningTo !== "object") {
+			return this.vectorBuffer.toString("utf-8");
+		} else {
+			const vector = this.vectorBuffer.toString("utf-8");
+			const nonLatinRegex = /^[^\u0000-\u007F]*$/;
+			const artistEscaped = this.user.listeningTo.artist.split('').map((char) => nonLatinRegex.test(char) ? encodeURI(char) : char).join('');
+			const titleEscaped = this.user.listeningTo.title.split('').map((char) => nonLatinRegex.test(char) ? encodeURI(char) : char).join('');
+			const thumbnail = await this.getThumbnailBuffer(this.user.listeningTo);
+
+			return vector
+				.replace(/<\s*laudiolinURI\s*>/, `https://laudiolin.seikimo.moe/track/${this.user.listeningTo.id}`)
+				.replace(/<\s*listenURL\s*>/, `https://laudiolin.seikimo.moe/listen/${this.user.userId}`)
+				.replace(/<\s*trackThumb\s*>/, thumbnail.toString('base64'))
+				.replace(/\{artist\}/, this.user.listeningTo.artist).replace(/\{title\}/, this.user.listeningTo.title)
+				.replace(/\{userTag\}/, this.user.discordTag).replace(/\{duration\}/, this.formatSeconds(this.user.listeningTo.duration))
+				.replace(/\{current\}/, this.formatSeconds(Math.round(this.user.progress)))
+				.replace(/&/g, "&amp;");
+		}
 	}
 }
